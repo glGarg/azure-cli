@@ -44,13 +44,14 @@ then
 fi
 
 target_profile=${AZURE_CLI_TEST_TARGET_PROFILE:-latest}
-if [ "$target_profile" = "2017-03-09" ]; then
-    # example: 2017-03-09-profile
-    target_profile=$target_profile-profile
-elif [ "$target_profile" = "2018-03-01" ]
-then
+if [ "$target_profile" != "latest" ]; then
+    # example: 2019-03-01-hybrid
     target_profile=$target_profile-hybrid
 fi
+
+# test basic az commands
+az -v
+az -h
 
 title 'Running tests'
 python -m automation test --ci --profile $target_profile

@@ -68,6 +68,11 @@ def load_arguments(self, _):
             c.argument('source_storage_account_id', help='used when source blob is in a different subscription')
             c.argument('size_gb', options_list=['--size-gb', '-z'], help='size in GB. Max size: 4095 GB (certain preview disks can be larger).', type=int)
             c.argument('duration_in_seconds', help='Time duration in seconds until the SAS access expires', type=int)
+            if self.supported_api_version(min_api='2018-09-30', operation_group='disks'):
+                c.argument('access_level', arg_type=get_enum_type(['Read', 'Write']), default='Read', help='access level')
+                c.argument('for_upload', arg_type=get_three_state_flag(),
+                           help='Create the {0} for uploading blobs later on through storage commands. Run "az {0} grant-access --access-level Write" to retrieve the {0}\'s SAS token.'.format(scope))
+                c.argument('hyper_v_generation', help='The hypervisor generation of the Virtual Machine. Applicable to OS disks only. Possible values include: "V1", "V2"')
 
     for scope in ['disk create', 'snapshot create']:
         with self.argument_context(scope) as c:
@@ -85,16 +90,6 @@ def load_arguments(self, _):
         c.argument('disk_mbps_read_write', type=int, min_api='2018-06-01', help="The bandwidth allowed for this disk. Only settable for UltraSSD disks. MBps means millions of bytes per second with ISO notation of powers of 10")
     # endregion
 
-    # region Identity
-    # TODO move to its own command module https://github.com/Azure/azure-cli/issues/5105
-    with self.argument_context('identity') as c:
-        c.argument('resource_name', arg_type=name_arg_type, id_part='name')
-
-    with self.argument_context('identity create') as c:
-        c.argument('location', get_location_type(self.cli_ctx))
-        c.argument('tags', tags_type)
-    # endregion
-
     # region Snapshots
     with self.argument_context('snapshot', resource_type=ResourceType.MGMT_COMPUTE, operation_group='snapshots') as c:
         c.argument('snapshot_name', existing_snapshot_name, id_part='name', completer=get_resource_name_completion_list('Microsoft.Compute/snapshots'))
@@ -109,6 +104,7 @@ def load_arguments(self, _):
     with self.argument_context('image') as c:
         c.argument('os_type', arg_type=get_enum_type(['Windows', 'Linux']))
         c.argument('image_name', arg_type=name_arg_type, id_part='name', completer=get_resource_name_completion_list('Microsoft.Compute/images'))
+        c.argument('tags', tags_type)
 
     with self.argument_context('image create') as c:
         # here we collpase all difference image sources to under 2 common arguments --os-disk-source --data-disk-sources
@@ -209,6 +205,11 @@ def load_arguments(self, _):
 
     with self.argument_context('vm encryption enable') as c:
         c.argument('encrypt_format_all', action='store_true', help='Encrypts-formats data disks instead of encrypting them. Encrypt-formatting is a lot faster than in-place encryption but wipes out the partition getting encrypt-formatted.')
+        # Place aad arguments in their own group
+        aad_arguments = 'Azure Active Directory'
+        c.argument('aad_client_id', arg_group=aad_arguments)
+        c.argument('aad_client_secret', arg_group=aad_arguments)
+        c.argument('aad_client_cert_thumbprint', arg_group=aad_arguments)
 
     with self.argument_context('vm extension') as c:
         c.argument('vm_extension_name', name_arg_type, completer=get_resource_name_completion_list('Microsoft.Compute/virtualMachines/extensions'), help='Name of the extension.', id_part='child_name_1')
@@ -250,14 +251,6 @@ def load_arguments(self, _):
     with self.argument_context('vm nic show') as c:
         c.argument('nic', help='NIC name or ID.', validator=validate_vm_nic)
 
-    with self.argument_context('vm run-command') as c:
-        c.argument('command_id', completer=get_vm_run_command_completion_list,
-                   help="The command id. Use 'az vm run-command list' to get the list")
-
-    with self.argument_context('vm run-command invoke') as c:
-        c.argument('parameters', nargs='+', help="space-separated parameters in the format of '[name=]value'")
-        c.argument('scripts', nargs='+', help="script lines separated by whites spaces. Use @{file} to load from a file")
-
     with self.argument_context('vm unmanaged-disk') as c:
         c.argument('new', action='store_true', help='Create a new disk.')
         c.argument('lun', type=int, help='0-based logical unit number (LUN). Max value depends on the Virtual Machine size.')
@@ -284,8 +277,9 @@ def load_arguments(self, _):
     with self.argument_context('vm list-skus') as c:
         c.argument('size', options_list=['--size', '-s'], help="size name, partial name is accepted")
         c.argument('zone', options_list=['--zone', '-z'], arg_type=get_three_state_flag(), help="show all vm size supporting availability zones")
-        c.argument('show_all', options_list=['--all'], help="show all information including vm sizes not available under the current subscription")
-        c.argument('resource_type', options_list=['--resource-type', '-r'], help='resource types e.g. "availabilitySets", "snapshots", "disk", etc')
+        c.argument('show_all', options_list=['--all'], arg_type=get_three_state_flag(),
+                   help="show all information including vm sizes not available under the current subscription")
+        c.argument('resource_type', options_list=['--resource-type', '-r'], help='resource types e.g. "availabilitySets", "snapshots", "disks", etc')
 
     with self.argument_context('vm restart') as c:
         c.argument('force', action='store_true', help='Force the VM to restart by redeploying it. Use if the VM is unresponsive.')
@@ -388,6 +382,18 @@ def load_arguments(self, _):
     for scope in ['vm', 'vmss']:
         with self.argument_context(scope) as c:
             c.argument('no_auto_upgrade', arg_type=get_three_state_flag(), help='If set, the extension service will not automatically pick or upgrade to the latest minor version, even if the extension is redeployed.')
+
+        with self.argument_context('{} run-command'.format(scope)) as c:
+            c.argument('command_id', completer=get_vm_run_command_completion_list, help="The command id. Use 'az {} run-command list' to get the list".format(scope))
+            if scope == 'vmss':
+                c.argument('vmss_name', vmss_name_type)
+
+        with self.argument_context('{} run-command invoke'.format(scope)) as c:
+            c.argument('parameters', nargs='+', help="space-separated parameters in the format of '[name=]value'")
+            c.argument('scripts', nargs='+', help="script lines separated by whites spaces. Use @{file} to load from a file")
+
+        with self.argument_context('{} stop'.format(scope)) as c:
+            c.argument('skip_shutdown', action='store_true', help='Skip shutdown and power-off immediately.', min_api='2019-03-01')
 
     for scope in ['vm identity assign', 'vmss identity assign']:
         with self.argument_context(scope) as c:
@@ -493,9 +499,9 @@ def load_arguments(self, _):
         with self.argument_context(scope) as c:
             c.argument('volume_type', help='Type of volume that the encryption operation is performed on', arg_type=get_enum_type(['DATA', 'OS', 'ALL']))
             c.argument('force', action='store_true', help='continue by ignoring client side validation errors')
-            c.argument('disk_encryption_keyvault', help='The key vault where the generated encryption key will be placed.')
+            c.argument('disk_encryption_keyvault', help='Name or ID of the key vault where the generated encryption key will be placed.')
             c.argument('key_encryption_key', help='Key vault key name or URL used to encrypt the disk encryption key.')
-            c.argument('key_encryption_keyvault', help='The key vault containing the key encryption key used to encrypt the disk encryption key. If missing, CLI will use `--disk-encryption-keyvault`.')
+            c.argument('key_encryption_keyvault', help='Name or ID of the key vault containing the key encryption key used to encrypt the disk encryption key. If missing, CLI will use `--disk-encryption-keyvault`.')
 
     for scope in ['vm extension', 'vmss extension']:
         with self.argument_context(scope) as c:
@@ -526,7 +532,11 @@ def load_arguments(self, _):
 
     for scope in ['vm create', 'vm update', 'vmss create', 'vmss update']:
         with self.argument_context(scope) as c:
-            c.argument('license_type', help="license type if the Windows image or disk used was licensed on-premises", arg_type=get_enum_type(['Windows_Server', 'Windows_Client', 'None']))
+            license_msg = "Specifies that the Windows image or disk was licensed on-premises. " \
+                          "To enable Azure Hybrid Benefit for Windows Server, use 'Windows_Server'. " \
+                          "To enable Multitenant Hosting Rights for Windows 10, use 'Windows_Client'. " \
+                          "For more information see the Azure Windows VM online docs."
+            c.argument('license_type', help=license_msg, arg_type=get_enum_type(['Windows_Server', 'Windows_Client', 'None']))
 
     with self.argument_context('sig') as c:
         c.argument('gallery_name', options_list=['--gallery-name', '-r'], help='gallery name')
@@ -580,12 +590,16 @@ def load_arguments(self, _):
         c.argument('exclude_from_latest', arg_type=get_three_state_flag(), help='The flag means that if it is set to true, people deploying VMs with version omitted will not use this version.')
         c.argument('version', help='image version')
         c.argument('end_of_life_date', help="the end of life date, e.g. '2020-12-31'")
+        c.argument('storage_account_type', help="The default storage account type to be used per region. To set regional storage account types, use --target-regions",
+                   arg_type=get_enum_type(["Standard_LRS", "Standard_ZRS"]), min_api='2019-03-01')
 
     with self.argument_context('sig image-version show') as c:
         c.argument('expand', help="The expand expression to apply on the operation, e.g. 'ReplicationStatus'")
+
     for scope in ['sig image-version create', 'sig image-version update']:
         with self.argument_context(scope) as c:
             c.argument('target_regions', nargs='*', validator=process_gallery_image_version_namespace,
-                       help='Space-separated list of regions and their replica counts. Use "<region>=<replica count>" to set the replica count for each region. If only the region is specified, the default replica count will be used.')
+                       help='Space-separated list of regions and their replica counts. Use "<region>[=<replica count>][=<storage account type>]" to optionally set the replica count and/or storage account type for each region. '
+                            'If a replica count is not specified, the default replica count will be used. If a storage account type is not specified, the default storage account type will be used')
             c.argument('replica_count', help='The default number of replicas to be created per region. To set regional replication counts, use --target-regions', type=int)
     # endregion

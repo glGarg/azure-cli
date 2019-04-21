@@ -24,7 +24,8 @@ def load_arguments(self, _):
         get_policy_completion_list, get_policy_set_completion_list, get_policy_assignment_completion_list,
         get_resource_types_completion_list, get_providers_completion_list)
     from azure.cli.command_modules.resource._validators import (
-        validate_lock_parameters, validate_resource_lock, validate_group_lock, validate_subscription_lock, validate_metadata, RollbackAction)
+        validate_lock_parameters, validate_resource_lock, validate_group_lock, validate_subscription_lock, validate_metadata, RollbackAction,
+        validate_msi)
 
     # BASIC PARAMETER CONFIGURATION
 
@@ -36,6 +37,8 @@ def load_arguments(self, _):
     existing_policy_set_definition_name_type = CLIArgumentType(options_list=['--name', '-n'], completer=get_policy_set_completion_list, help='The policy set definition name.')
     subscription_type = CLIArgumentType(options_list='--subscription', FilesCompleter=get_subscription_id_list, help='The subscription id of the policy [set] definition.')
     management_group_name_type = CLIArgumentType(options_list='--management-group', help='The name of the management group of the policy [set] definition.')
+    identity_scope_type = CLIArgumentType(help="Scope that the system assigned identity can access")
+    identity_role_type = CLIArgumentType(options_list=['--role'], help="Role name or id that will be assigned to the managed identity")
 
     _PROVIDER_HELP_TEXT = 'the resource namespace, aka \'provider\''
 
@@ -67,6 +70,13 @@ def load_arguments(self, _):
         c.argument('resource_id', options_list=['--id'], help='Resource ID.', action=None)
         c.argument('properties', options_list=['--properties', '-p'], help='a JSON-formatted string containing resource properties')
         c.argument('is_full_object', action='store_true', help='Indicates that the properties object includes other options such as location, tags, sku, and/or plan.')
+
+    with self.argument_context('resource link') as c:
+        c.argument('target_id', options_list=['--target', c.deprecate(target='--target-id', redirect='--target', hide=True)], help='Fully-qualified resource ID of the resource link target.')
+        c.argument('link_id', options_list=['--link', c.deprecate(target='--link-id', redirect='--link', hide=True)], help='Fully-qualified resource ID of the resource link.')
+        c.argument('notes', help='Notes for the link.')
+        c.argument('scope', help='Fully-qualified scope for retrieving links.')
+        c.argument('filter_string', options_list=['--filter', c.deprecate(target='--filter-string', redirect='--filter', hide=True)], help='Filter string for limiting results.')
 
     with self.argument_context('provider') as c:
         c.ignore('top')
@@ -116,12 +126,24 @@ def load_arguments(self, _):
 
     with self.argument_context('policy assignment create', resource_type=ResourceType.MGMT_RESOURCE_POLICY) as c:
         c.argument('name', options_list=['--name', '-n'], help='Name of the new policy assignment.')
-        c.argument('params', options_list=['--params', '-p'], help='JSON formatted string or path to file with parameter values of policy rule.', min_api='2016-12-01')
+        c.argument('params', options_list=['--params', '-p'], help='JSON formatted string or a path to a file or uri with parameter values of the policy rule.', type=file_type, completer=FilesCompleter(), min_api='2016-12-01')
 
     with self.argument_context('policy assignment create', resource_type=ResourceType.MGMT_RESOURCE_POLICY, min_api='2017-06-01-preview') as c:
         c.argument('policy_set_definition', options_list=['--policy-set-definition', '-d'], help='Name or id of the policy set definition.')
         c.argument('sku', options_list=['--sku', '-s'], help='policy sku.', arg_type=get_enum_type(['free', 'standard']))
         c.argument('notscopes', options_list='--not-scopes', nargs='+')
+
+    with self.argument_context('policy assignment create', resource_type=ResourceType.MGMT_RESOURCE_POLICY, min_api='2018-05-01') as c:
+        c.argument('location', arg_type=get_location_type(self.cli_ctx))
+
+    with self.argument_context('policy assignment create', resource_type=ResourceType.MGMT_RESOURCE_POLICY, arg_group='Managed Identity', min_api='2018-05-01') as c:
+        c.argument('assign_identity', nargs='*', validator=validate_msi, help="Assigns a system assigned identity to the policy assignment.")
+        c.argument('identity_scope', arg_type=identity_scope_type)
+        c.argument('identity_role', arg_type=identity_role_type)
+
+    with self.argument_context('policy assignment identity', resource_type=ResourceType.MGMT_RESOURCE_POLICY, min_api='2018-05-01') as c:
+        c.argument('identity_scope', arg_type=identity_scope_type)
+        c.argument('identity_role', arg_type=identity_role_type)
 
     with self.argument_context('policy set-definition', min_api='2017-06-01-preview', resource_type=ResourceType.MGMT_RESOURCE_POLICY) as c:
         c.argument('policy_set_definition_name', arg_type=existing_policy_set_definition_name_type)

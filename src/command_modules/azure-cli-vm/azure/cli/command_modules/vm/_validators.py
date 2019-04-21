@@ -311,7 +311,7 @@ def _validate_location(cmd, namespace, zone_info, size_info):
             if not hasattr(temp, 'location_info'):
                 return
             if not temp or not [x for x in (temp.location_info or []) if x.zones]:
-                raise CLIError("{}'s location can't be used to create the VM/VMSS because availablity zone is not yet "
+                raise CLIError("{}'s location can't be used to create the VM/VMSS because availability zone is not yet "
                                "supported. Please use '--location' to specify a capable one. 'az vm list-skus' can be "
                                "used to find such locations".format(namespace.resource_group_name))
 
@@ -585,7 +585,7 @@ def _validate_vm_vmss_create_vnet(cmd, namespace, for_scale_set=False):
 
         if subnet_is_id and not subnet_exists:
             raise CLIError("Subnet '{}' does not exist.".format(subnet))
-        elif subnet_exists:
+        if subnet_exists:
             # 2 - user specified existing vnet/subnet
             namespace.vnet_type = 'existing'
             logger.debug("using specified vnet '%s' and subnet '%s'", namespace.vnet_name, namespace.subnet)
@@ -661,13 +661,14 @@ def _validate_vm_vmss_accelerated_networking(cli_ctx, namespace):
                 return
 
         # VMs need to be a supported image in the marketplace
-        # Ubuntu 16.04, SLES 12 SP3, RHEL 7.4, CentOS 7.4, CoreOS Linux, Debian "Stretch" with backports kernel
+        # Ubuntu 16.04 | 18.04, SLES 12 SP3, RHEL 7.4, CentOS 7.4, CoreOS Linux, Debian "Stretch" with backports kernel
         # Oracle Linux 7.4, Windows Server 2016, Windows Server 2012R2
         publisher, offer, sku = namespace.os_publisher, namespace.os_offer, namespace.os_sku
         if not publisher:
             return
         publisher, offer, sku = publisher.lower(), offer.lower(), sku.lower()
-        distros = [('canonical', 'UbuntuServer', '^16.04'), ('suse', 'sles', '^12-sp3'), ('redhat', 'rhel', '^7.4'),
+        distros = [('canonical', 'UbuntuServer', '^16.04|^18.04'),
+                   ('suse', 'sles', '^12-sp3'), ('redhat', 'rhel', '^7.4'),
                    ('openlogic', 'centos', '^7.4'), ('coreos', 'coreos', None), ('credativ', 'debian', '-backports'),
                    ('oracle', 'oracle-linux', '^7.4'), ('MicrosoftWindowsServer', 'WindowsServer', '^2016'),
                    ('MicrosoftWindowsServer', 'WindowsServer', '^2012-R2')]
@@ -1002,7 +1003,7 @@ def _resolve_role_id(cli_ctx, role, scope):
             role_defs = list(client.list(scope, "roleName eq '{}'".format(role)))
             if not role_defs:
                 raise CLIError("Role '{}' doesn't exist.".format(role))
-            elif len(role_defs) > 1:
+            if len(role_defs) > 1:
                 ids = [r.id for r in role_defs]
                 err = "More than one role matches the given name '{}'. Please pick an id from '{}'"
                 raise CLIError(err.format(role, ids))
@@ -1048,7 +1049,7 @@ def _get_default_address_pool(cli_ctx, resource_group, balancer_name, balancer_t
     if len(values) > 1:
         raise CLIError("Multiple possible values found for '{0}': {1}\nSpecify '{0}' "
                        "explicitly.".format(option_name, ', '.join(values)))
-    elif not values:
+    if not values:
         raise CLIError("No existing values found for '{0}'. Create one first and try "
                        "again.".format(option_name))
     return values[0]
@@ -1144,7 +1145,7 @@ def _validate_vmss_create_load_balancer_or_app_gateway(cmd, namespace):
                     if len(lb.inbound_nat_pools) > 1:
                         raise CLIError("Multiple possible values found for '{0}': {1}\nSpecify '{0}' explicitly.".format(  # pylint: disable=line-too-long
                             '--nat-pool-name', ', '.join([n.name for n in lb.inbound_nat_pools])))
-                    elif not lb.inbound_nat_pools:  # Associated scaleset will be missing ssh/rdp, so warn here.
+                    if not lb.inbound_nat_pools:  # Associated scaleset will be missing ssh/rdp, so warn here.
                         logger.warning("No inbound nat pool was configured on '%s'", namespace.load_balancer)
                     else:
                         namespace.nat_pool_name = lb.inbound_nat_pools[0].name
@@ -1212,6 +1213,9 @@ def process_vmss_create_namespace(cmd, namespace):
     _validate_vm_vmss_create_auth(namespace)
     _validate_vm_vmss_msi(cmd, namespace)
 
+    if namespace.secrets:
+        _validate_secrets(namespace.secrets, namespace.os_type)
+
     if namespace.license_type and namespace.os_type.lower() != 'windows':
         raise CLIError('usage error: --license-type is only applicable on Windows VM scaleset')
 
@@ -1235,7 +1239,7 @@ def validate_vmss_disk(cmd, namespace):
                                           namespace.resource_group_name, 'disks', 'Microsoft.Compute')
     if bool(namespace.disk) == bool(namespace.size_gb):
         raise CLIError('usage error: --disk EXIST_DISK --instance-id ID | --size-gb GB')
-    elif bool(namespace.disk) != bool(namespace.instance_id):
+    if bool(namespace.disk) != bool(namespace.instance_id):
         raise CLIError('usage error: --disk EXIST_DISK --instance-id ID')
 
 
@@ -1350,26 +1354,48 @@ def process_remove_identity_namespace(cmd, namespace):
                                                            'Microsoft.ManagedIdentity')
 
 
-# TODO move to its own command module https://github.com/Azure/azure-cli/issues/5105
-def process_msi_namespace(cmd, namespace):
-    get_default_location_from_resource_group(cmd, namespace)
-    validate_tags(namespace)
-
-
 def process_gallery_image_version_namespace(cmd, namespace):
     TargetRegion = cmd.get_models('TargetRegion')
+    storage_account_types_list = [item.lower() for item in ['Standard_LRS', 'Standard_ZRS']]
+    storage_account_types_str = ", ".join(storage_account_types_list)
+
     if namespace.target_regions:
         regions_info = []
         for t in namespace.target_regions:
-            parts = t.split('=', 1)
-            if len(parts) == 1:
-                regions_info.append(TargetRegion(name=parts[0]))
-            else:
+            parts = t.split('=', 2)
+            replica_count = None
+            storage_account_type = None
+
+            # Region specified, but also replica count or storage account type
+            if len(parts) == 2:
                 try:
                     replica_count = int(parts[1])
                 except ValueError:
-                    raise CLIError("usage error: {}'s replica count must be an integer".format(parts[0]))
-                regions_info.append(TargetRegion(name=parts[0], regional_replica_count=replica_count))
+                    storage_account_type = parts[1]
+                    if parts[1].lower() not in storage_account_types_list:
+                        raise CLIError("usage error: {} is an invalid target region argument. The second part is "
+                                       "neither an integer replica count or a valid storage account type. "
+                                       "Storage account types must be one of {}."
+                                       .format(t, storage_account_types_str))
+
+            # Region specified, but also replica count and storage account type
+            elif len(parts) == 3:
+                try:
+                    replica_count = int(parts[1])   # raises ValueError if this is not a replica count, try other order.
+                    storage_account_type = parts[2]
+                    if storage_account_type not in storage_account_types_list:
+                        raise CLIError("usage error: {} is an invalid target region argument. The third part is "
+                                       "not a valid storage account type. Storage account types must be one of {}."
+                                       .format(t, storage_account_types_str))
+                except ValueError:
+                    raise CLIError("usage error: {} is an invalid target region argument. "
+                                   "The second part must be a valid integer replica count.".format(t))
+
+            # At least the region is specified
+            if len(parts) >= 1:
+                regions_info.append(TargetRegion(name=parts[0], regional_replica_count=replica_count,
+                                                 storage_account_type=storage_account_type))
+
         namespace.target_regions = regions_info
 # endregion
 

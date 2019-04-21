@@ -13,6 +13,7 @@ from azure.cli.command_modules.botservice.bot_publish_prep import BotPublishPrep
 from azure.cli.command_modules.botservice.bot_template_deployer import BotTemplateDeployer
 from azure.cli.command_modules.botservice.kudu_client import KuduClient
 from azure.cli.command_modules.botservice.web_app_operations import WebAppOperations
+from azure.cli.core.commands.client_factory import get_subscription_id
 from azure.mgmt.botservice.models import (
     Bot,
     BotProperties,
@@ -27,7 +28,7 @@ from knack.log import get_logger
 logger = get_logger(__name__)
 
 
-def create(cmd, client, resource_group_name, resource_name, kind, description=None, display_name=None,
+def create(cmd, client, resource_group_name, resource_name, kind, description=None, display_name=None,  # pylint: disable=too-many-locals
            endpoint=None, msa_app_id=None, password=None, tags=None, storageAccountName=None,
            location='Central US', sku_name='F0', appInsightsLocation='South Central US',
            language='Csharp', version='v3'):
@@ -55,9 +56,6 @@ def create(cmd, client, resource_group_name, resource_name, kind, description=No
     :return:
     """
 
-    # If display name was not provided, just use the resource name
-    display_name = display_name or resource_name
-
     # Kind parameter validation
     kind = kind.lower()
 
@@ -65,6 +63,16 @@ def create(cmd, client, resource_group_name, resource_name, kind, description=No
     bot_kind = 'bot'
     webapp_kind = 'webapp'
     function_kind = 'function'
+    show_password = False
+
+    if resource_name.find(".") > -1:
+        logger.warning('"." found in --name parameter ("%s"). "." is an invalid character for Azure Bot resource names '
+                       'and will been removed.', resource_name)
+        # Remove or replace invalid "." character
+        resource_name = resource_name.replace(".", "")
+
+    # If display name was not provided, just use the resource name
+    display_name = display_name or resource_name
 
     # Mapping: registration is deprecated, we now use 'bot' kind for registration bots
     if kind == registration_kind:
@@ -79,7 +87,7 @@ def create(cmd, client, resource_group_name, resource_name, kind, description=No
     if not msa_app_id:
 
         logger.info('Microsoft application id not passed as a parameter. Provisioning a new Microsoft application.')
-
+        show_password = True
         msa_app_id, password = ConvergedApp.provision(resource_name)
         logger.info('Microsoft application provisioning successful. Application Id: %s.', msa_app_id)
 
@@ -92,7 +100,7 @@ def create(cmd, client, resource_group_name, resource_name, kind, description=No
 
         # Registration bot specific validation
         if not endpoint:
-            raise CLIError('Endpoint is required for creating a registration bot.')
+            endpoint = ''
         if not msa_app_id:
             raise CLIError('Microsoft application id is required for creating a registration bot.')
 
@@ -111,18 +119,32 @@ def create(cmd, client, resource_group_name, resource_name, kind, description=No
         logger.info('Bot parameters client side validation successful.')
         logger.info('Creating bot.')
 
-        return client.bots.create(
+        result = client.bots.create(
             resource_group_name=resource_group_name,
             resource_name=resource_name,
             parameters=parameters
-        )
+        ).as_dict()
+        if show_password:
+            result['password'] = password
+        return result
     # Web app and function bots require deploying custom ARM templates, we do that in a separate method
     else:
         logger.info('Detected kind %s, validating parameters for the specified kind.', kind)
 
-        return BotTemplateDeployer.create_app(
+        creation_results = BotTemplateDeployer.create_app(
             cmd, logger, client, resource_group_name, resource_name, description, kind, msa_app_id, password,
             storageAccountName, location, sku_name, appInsightsLocation, language, version)
+
+        subscription_id = get_subscription_id(cmd.cli_ctx)
+        publish_cmd = "az bot publish --resource-group %s -n %s --subscription %s -v %s" % (
+            resource_group_name, resource_name, subscription_id, version)
+        if language == 'Csharp':
+            proj_file = '%s.csproj' % resource_name
+            publish_cmd += " --proj-file-path %s" % proj_file
+        creation_results['publishCommand'] = publish_cmd
+        logger.info('To publish your local changes to Azure, use the following command from your code directory:\n  %s',
+                    publish_cmd)
+        return creation_results
 
 
 def get_bot(cmd, client, resource_group_name, resource_name, bot_json=None):
@@ -340,7 +362,8 @@ def get_service_providers(client, name=None):
     return service_provider_response
 
 
-def prepare_publish(cmd, client, resource_group_name, resource_name, sln_name, proj_name, code_dir=None, version='v3'):  # pylint:disable=too-many-statements
+def prepare_publish(cmd, client, resource_group_name, resource_name, sln_name, proj_file_path, code_dir=None,  # pylint:disable=too-many-statements
+                    version='v3'):
     """Adds PostDeployScripts folder with necessary scripts to deploy v3 bot to Azure.
 
     This method is directly called via "bot prepare-publish"
@@ -350,7 +373,7 @@ def prepare_publish(cmd, client, resource_group_name, resource_name, sln_name, p
     :param resource_group_name:
     :param resource_name:
     :param sln_name:
-    :param proj_name:
+    :param proj_file_path:
     :param code_dir:
     :param version:
     :return:
@@ -415,7 +438,7 @@ def prepare_publish(cmd, client, resource_group_name, resource_name, sln_name, p
         try:
             shutil.copyfile(os.path.join(download_path['downloadPath'], 'PostDeployScripts', 'deploy.cmd.template'),
                             'deploy.cmd')
-        except FileNotFoundError as error:
+        except OSError as error:  # FileNotFoundError introduced in Python 3
             logger.error('"deploy.cmd.template" not found. This may be due to calling \'az bot prepare-publish\' on a '
                          'v4 bot. To prepare and publish a v4 bot, please instead use \'az bot publish\'.')
             raise CLIError(error)
@@ -429,7 +452,7 @@ def prepare_publish(cmd, client, resource_group_name, resource_name, sln_name, p
                     break
                 if fileName == sln_name:
                     solution_path = os.path.relpath(os.path.join(root, fileName))
-                if fileName == proj_name:
+                if fileName == proj_file_path:
                     csproj_path = os.path.relpath(os.path.join(root, fileName))
 
         # Read deploy script contents
@@ -452,7 +475,45 @@ def prepare_publish(cmd, client, resource_group_name, resource_name, sln_name, p
     logger.info('Bot prepare publish completed successfully.')
 
 
-def publish_app(cmd, client, resource_group_name, resource_name, code_dir=None, proj_name=None, version='v3'):
+def prepare_webapp_deploy(language, code_dir=None, proj_file_path=None):
+    if not code_dir:
+        code_dir = os.getcwd()
+        logger.info('--code-dir not provided, defaulting to current working directory: %s\n'
+                    'For more information, run "az bot prepare-deploy -h"', code_dir)
+    elif not os.path.exists(code_dir):
+        raise CLIError('Provided --code-dir value ({0}) does not exist'.format(code_dir))
+
+    def does_file_exist(file_name):
+        if os.path.exists(os.path.join(code_dir, file_name)):
+            raise CLIError('%s found in %s\nPlease delete this %s before calling "az bot '   # pylint:disable=logging-not-lazy
+                           'prepare-deploy"' % (file_name, code_dir, file_name))
+
+    if language != 'Csharp':
+        if proj_file_path:
+            raise CLIError('--proj-file-path should not be passed in if language is not Csharp')
+        does_file_exist('web.config')
+
+        BotPublishPrep.prepare_publish_v4(logger, code_dir, proj_file_path, {'lang': language,
+                                                                             'has_web_config': False,
+                                                                             'has_iisnode_yml': True})
+    else:
+        if not proj_file_path:
+            raise CLIError('--proj-file-path must be provided if language is Csharp')
+        does_file_exist('.deployment')
+        csproj_file = os.path.join(code_dir, proj_file_path)
+        if not os.path.exists(csproj_file):
+            raise CLIError('{0} file not found\nPlease verify the relative path to the .csproj file from the '
+                           '--code-dir'.format(csproj_file))
+
+        with open(os.path.join(code_dir, '.deployment'), 'w') as f:
+            f.write('[config]\n')
+            proj_file = proj_file_path.lower()
+            proj_file = proj_file if proj_file.endswith('.csproj') else proj_file + '.csproj'
+            f.write('SCM_SCRIPT_GENERATOR_ARGS=--aspNetCore "{0}"\n'.format(proj_file))
+
+
+def publish_app(cmd, client, resource_group_name, resource_name, code_dir=None, proj_file_path=None, version='v3',  # pylint:disable=too-many-statements
+                keep_node_modules=None, timeout=None):
     """Publish local bot code to Azure.
 
     This method is directly called via "bot publish"
@@ -462,8 +523,10 @@ def publish_app(cmd, client, resource_group_name, resource_name, code_dir=None, 
     :param resource_group_name:
     :param resource_name:
     :param code_dir:
-    :param proj_name:
+    :param proj_file_path:
     :param version:
+    :param keep_node_modules:
+    :param timeout:
     :return:
     """
     # Get the bot information and ensure it's not only a registration bot.
@@ -487,15 +550,24 @@ def publish_app(cmd, client, resource_group_name, resource_name, code_dir=None, 
         raise CLIError('The path %s is not a valid directory. '
                        'Please supply a valid directory path containing your source code.' % code_dir)
 
+    # If local IIS Node.js files exist, this means two things:
+    # 1. We may not need to download the necessary web.config and iisnode.yml files to deploy a Node.js bot on IIS.
+    # 2. We shouldn't delete their local web.config and issnode.yml files (if they exist).
+    iis_publish_info = {
+        'lang': 'Csharp' if not os.path.exists(os.path.join(code_dir, 'package.json')) else 'Node',
+        'has_web_config': True if os.path.exists(os.path.join(code_dir, 'web.config')) else False,
+        'has_iisnode_yml': True if os.path.exists(os.path.join(code_dir, 'iisnode.yml')) else False
+    }
+
     # Ensure that the directory contains appropriate post deploy scripts folder
     if 'PostDeployScripts' not in os.listdir(code_dir):
         if version == 'v4':
 
             logger.info('Detected SDK version v4. Running prepare publish in code directory %s and for project file %s'  # pylint:disable=logging-not-lazy
-                        % (code_dir, proj_name))
+                        % (code_dir, proj_file_path))
 
             # Automatically run prepare-publish in case of v4.
-            BotPublishPrep.prepare_publish_v4(logger, code_dir, proj_name)
+            BotPublishPrep.prepare_publish_v4(logger, code_dir, proj_file_path, iis_publish_info)
         else:
             logger.info('Detected SDK version v3. PostDeploymentScripts folder not found in directory provided: %s',
                         code_dir)
@@ -504,20 +576,69 @@ def publish_app(cmd, client, resource_group_name, resource_name, code_dir=None, 
                            'prepared for deployment. Please run prepare-publish. For more information, run \'az bot '
                            'prepare-publish -h\'.')
 
-    logger.info('Creating upload zip file.')
     zip_filepath = BotPublishPrep.create_upload_zip(logger, code_dir, include_node_modules=False)
     logger.info('Zip file path created, at %s.', zip_filepath)
 
     kudu_client = KuduClient(cmd, resource_group_name, resource_name, bot, logger)
-    output = kudu_client.publish(zip_filepath)
+
+    app_settings = WebAppOperations.get_app_settings(
+        cmd=cmd,
+        resource_group_name=resource_group_name,
+        name=kudu_client.bot_site_name
+    )
+    scm_do_build = [item['value'] for item in app_settings if item['name'] == 'SCM_DO_BUILD_DURING_DEPLOYMENT']
+    if scm_do_build and scm_do_build[0] == 'true':
+        logger.info('Detected SCM_DO_BUILD_DURING_DEPLOYMENT with value of "true" in App Service\'s Application '
+                    'Settings. Build will commence during deployment. For more information, see '
+                    'https://github.com/projectkudu/kudu/wiki/Deploying-from-a-zip-file')
+    else:
+        logger.warning('Didn\'t detect SCM_DO_BUILD_DURING_DEPLOYMENT or its value was "false" in App Service\'s '
+                       'Application Settings. Build may not commence during deployment. To learn how to trigger a build'
+                       ' when deploying to your App Service, see '
+                       'https://github.com/projectkudu/kudu/wiki/Deploying-from-a-zip-file')
+        subscription_id = get_subscription_id(cmd.cli_ctx)
+        logger.warning('To change the Application Setting via az cli, use the following command:\naz webapp config '  # pylint:disable=logging-not-lazy
+                       'appsettings set -n %s -g %s --subscription %s --settings SCM_DO_BUILD_DURING_DEPLOYMENT=true' %
+                       (kudu_client.bot_site_name, resource_group_name, subscription_id))
+
+    output = kudu_client.publish(zip_filepath, timeout, keep_node_modules, iis_publish_info['lang'])
 
     logger.info('Bot source published. Preparing bot application to run the new source.')
     os.remove('upload.zip')
+    # If the bot is a Node.js bot and did not initially have web.config, delete web.config and iisnode.yml.
+    if iis_publish_info['lang'] == 'Node':
+        if not iis_publish_info['has_web_config'] and os.path.exists(os.path.join(code_dir, 'web.config')):
+            os.remove(os.path.join(code_dir, 'web.config'))
+        if not iis_publish_info['has_iisnode_yml'] and os.path.exists(os.path.join(code_dir, 'iisnode.yml')):
+            os.remove(os.path.join(code_dir, 'iisnode.yml'))
 
-    if os.path.exists(os.path.join('.', 'package.json')):
+        if not iis_publish_info['has_iisnode_yml'] and not iis_publish_info['has_web_config']:
+            logger.info("web.config and iisnode.yml for Node.js bot were fetched from Azure for deployment using IIS. "
+                        "These files have now been removed from %s."
+                        "To see the two files used for your deployment, either visit your bot's Kudu site or download "
+                        "the files from https://icscratch.blob.core.windows.net/bot-packages/node_v4_publish.zip",
+                        code_dir)
+        elif not iis_publish_info['has_iisnode_yml']:
+            logger.info("iisnode.yml for Node.js bot was fetched from Azure for deployment using IIS. To see this file "
+                        "that was used for your deployment, either visit your bot's Kudu site or download the file "
+                        "from https://icscratch.blob.core.windows.net/bot-packages/node_v4_publish.zip")
+        elif not iis_publish_info['has_web_config']:
+            logger.info("web.config for Node.js bot was fetched from Azure for deployment using IIS. To see this file "
+                        "that was used for your deployment, either visit your bot's Kudu site or download the file "
+                        "from https://icscratch.blob.core.windows.net/bot-packages/node_v4_publish.zip")
+
+    if os.path.exists(os.path.join('.', 'package.json')) and not keep_node_modules:
         logger.info('Detected language javascript. Installing node dependencies in remote bot.')
         kudu_client.install_node_dependencies()
 
-    logger.info('Bot publish completed successfully.')
+    if output.get('active'):
+        logger.info('Deployment successful!')
 
+    if not output.get('active'):
+        scm_url = output.get('url')
+        deployment_id = output.get('id')
+        # Instead of replacing "latest", which would could be in the bot name, we replace "deployments/latest"
+        deployment_url = scm_url.replace('deployments/latest', 'deployments/%s' % deployment_id)
+        logger.error('Deployment failed. To find out more information about this deployment, please visit %s.',
+                     deployment_url)
     return output

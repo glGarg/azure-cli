@@ -676,31 +676,19 @@ class VMManagedDiskScenarioTest(ScenarioTest):
                      self.check('storageProfile.osDisk.caching', 'ReadWrite')
                  ])
 
-
-class VMWriteAcceleratorScenarioTest(ScenarioTest):
-
-    @record_only()  # this test requires M series of VM with 64+ cores. Being in live-run is not feasible due to quota limit
-    @ResourceGroupPreparer(name_prefix='cli_vm_write_accel', location='westus2')
-    def test_vm_write_accelerator_e2e(self, resource_group, resource_group_location):
+    @ResourceGroupPreparer(name_prefix='cli_test_large_disk')
+    def test_vm_large_disk(self, resource_group):
         self.kwargs.update({
-            'vm': 'vm1'
+            'disk': 'd1',
+            'snapshot': 's1'
         })
-        self.cmd('vm create -g {rg} -n {vm} --data-disk-sizes-gb 1 --image centos --size Standard_M64ms --admin-username clitester --generate-ssh-keys --accelerated-network false')
-        self.cmd('vm show -g {rg} -n {vm}', checks=[
-            self.check('storageProfile.osDisk.writeAcceleratorEnabled', None),
-            self.check('storageProfile.dataDisks[0].writeAcceleratorEnabled', None)
+        self.cmd('disk create -g {rg} -n {disk} --size-gb 1 --hyper-v-generation V2 --for-upload', checks=[
+            self.check('hyperVgeneration', "V2")
         ])
-        self.cmd('vm update -g {rg} -n {vm} --write-accelerator true --disk-caching readonly')
-        self.cmd('vm show -g {rg} -n {vm}', checks=[
-            self.check('storageProfile.osDisk.writeAcceleratorEnabled', True),
-            self.check('storageProfile.dataDisks[0].writeAcceleratorEnabled', True),
-        ])
-        self.cmd('vm disk attach -g {rg} --vm-name {vm} --name d1 --enable-write-accelerator --new --size-gb 1')
-        self.cmd('vm update -g {rg} -n {vm} --write-accelerator 1=false os=false')
-        self.cmd('vm show -g {rg} -n {vm}', checks=[
-            self.check('storageProfile.osDisk.writeAcceleratorEnabled', False),
-            self.check('storageProfile.dataDisks[0].writeAcceleratorEnabled', True),
-            self.check('storageProfile.dataDisks[1].writeAcceleratorEnabled', False)
+        self.cmd('disk grant-access -g {rg} -n {disk} --access-level Write --duration-in-seconds 3600')
+        self.cmd('disk revoke-access -g {rg} -n {disk}')
+        self.cmd('snapshot create -g {rg} -n {snapshot} --source {disk} --hyper-v-generation V2', checks=[
+            self.check('hyperVgeneration', "V2")
         ])
 
 
@@ -845,7 +833,7 @@ class VMAvailSetScenarioTest(ScenarioTest):
             self.check('[0].name', '{availset}')
         ])
         result = self.cmd('vm availability-set list --query "[?name==\'availset-test\']"').get_output_in_json()
-        self.assertEquals(1, len(result))
+        self.assertEqual(1, len(result))
         self.cmd('vm availability-set list-sizes -g {rg} -n {availset}',
                  checks=self.check('type(@)', 'array'))
         self.cmd('vm availability-set show -g {rg} -n {availset}',
@@ -1550,10 +1538,10 @@ class VMDiskAttachDetachTest(ScenarioTest):
             'disk3': 'd3',
             'disk4': 'd4'
         })
-        self.cmd('disk create -g {rg} -n {disk1} --size-gb 4 --sku UltraSSD_LRS --disk-iops-read-write 500 --disk-mbps-read-write 8 --zone 3')
+        self.cmd('disk create -g {rg} -n {disk1} --size-gb 4 --sku UltraSSD_LRS --disk-iops-read-write 500 --disk-mbps-read-write 8 --zone 2')
         self.cmd('disk show -g {rg} -n {disk1}')
         self.cmd('disk create -g {rg} -n {disk2} --size-gb 4 --sku UltraSSD_LRS')
-        self.cmd('vm create -g {rg} -n {vm} --admin-username admin123 --admin-password testPassword0 --image debian --storage-sku UltraSSD_LRS --data-disk-sizes-gb 4 --zone 3 --location eastus2')
+        self.cmd('vm create -g {rg} -n {vm} --admin-username admin123 --size Standard_D2s_v3 --admin-password testPassword0 --image debian --storage-sku UltraSSD_LRS --data-disk-sizes-gb 4 --zone 2 --location eastus2')
         self.cmd('vm disk attach -g {rg} --vm-name {vm} --name {disk3} --new --size-gb 5 --sku UltraSSD_LRS')
         self.cmd('vm disk attach -g {rg} --vm-name {vm} --name {disk1}')
 
@@ -1563,7 +1551,7 @@ class VMDiskAttachDetachTest(ScenarioTest):
             self.check('storageProfile.dataDisks[1].managedDisk.storageAccountType', 'UltraSSD_LRS'),
             self.check('storageProfile.dataDisks[2].managedDisk.storageAccountType', 'UltraSSD_LRS'),
         ])
-        self.cmd('vm create -g {rg} -n {vm2} --admin-username admin123 --admin-password testPassword0 --image debian --ultra-ssd-enabled --zone 3 --location eastus2')
+        self.cmd('vm create -g {rg} -n {vm2} --admin-username admin123 --admin-password testPassword0 --image debian --size Standard_D2s_v3 --ultra-ssd-enabled --zone 2 --location eastus2')
         self.cmd('vm disk attach -g {rg} --vm-name {vm2} --name {disk4} --new --size-gb 5 --sku UltraSSD_LRS')
         self.cmd('vm show -g {rg} -n {vm2}', checks=[
             self.check('storageProfile.osDisk.managedDisk.storageAccountType', 'Premium_LRS'),
@@ -1575,7 +1563,7 @@ class VMDiskAttachDetachTest(ScenarioTest):
         self.kwargs.update({
             'disk1': 'd1'
         })
-        self.cmd('disk create -g {rg} -n {disk1} --size-gb 4 --sku UltraSSD_LRS --disk-iops-read-write 500 --disk-mbps-read-write 8 --zone 3')
+        self.cmd('disk create -g {rg} -n {disk1} --size-gb 4 --sku UltraSSD_LRS --disk-iops-read-write 500 --disk-mbps-read-write 8 --zone 2')
         self.cmd('disk update -g {rg} -n {disk1} --disk-iops-read-write 510 --disk-mbps-read-write 10', checks=[
             self.check('diskIopsReadWrite', 510),
             self.check('diskMbpsReadWrite', 10)
@@ -1588,13 +1576,14 @@ class VMDiskAttachDetachTest(ScenarioTest):
             'vmss': 'vm-ultrassd',
             'vmss2': 'vm-ultrassd2'
         })
-        self.cmd('vmss create -g {rg} -n {vmss} --admin-username admin123 --admin-password testPassword0 --image debian --storage-sku UltraSSD_LRS --data-disk-sizes-gb 4 --zone 3 --location eastus2')
+        self.cmd('vmss create -g {rg} -n {vmss} --admin-username admin123 --admin-password testPassword0 --image debian --storage-sku UltraSSD_LRS '
+                 ' --data-disk-sizes-gb 4 --zone 2 --location eastus2 --vm-sku Standard_D2s_v3')
 
         self.cmd('vmss show -g {rg} -n {vmss}', checks=[
             self.check('virtualMachineProfile.storageProfile.osDisk.managedDisk.storageAccountType', 'Premium_LRS'),
             self.check('virtualMachineProfile.storageProfile.dataDisks[0].managedDisk.storageAccountType', 'UltraSSD_LRS'),
         ])
-        self.cmd('vmss create -g {rg} -n {vmss2} --admin-username admin123 --admin-password testPassword0 --image debian --ultra-ssd-enabled --zone 3 --location eastus2')
+        self.cmd('vmss create -g {rg} -n {vmss2} --admin-username admin123 --admin-password testPassword0 --image debian --ultra-ssd-enabled --zone 2 --location eastus2 --vm-sku Standard_D2s_v3')
         self.cmd('vmss disk attach -g {rg} --vmss-name {vmss2} --size-gb 5 --sku UltraSSD_LRS')
         self.cmd('vmss show -g {rg} -n {vmss2}', checks=[
             self.check('virtualMachineProfile.storageProfile.osDisk.managedDisk.storageAccountType', 'Premium_LRS'),
@@ -1984,6 +1973,8 @@ class AcceleratedNetworkingTest(ScenarioTest):
         self.kwargs.update({
             'vm': 'vm1'
         })
+        # Note: CLI turns sets accelerated_networking to true based on vm size and os image.
+        # See _validate_vm_vmss_accelerated_networking for more info.
         self.cmd("vm create -n {vm} -g {rg} --size Standard_DS4_v2 --image ubuntults --admin-username clittester --generate-ssh-keys")
         self.cmd('network nic show -n {vm}vmnic -g {rg}', checks=self.check('enableAcceleratedNetworking', True))
 
@@ -2020,9 +2011,9 @@ class SecretsScenarioTest(ScenarioTest):  # pylint: disable=too-many-instance-at
             'vault': self.create_random_name('vmlinuxkv', 20)
         })
 
-        # TODO: Re-enable when issue #5155 is resolved.
-        # message = 'Secret is missing vaultCertificates array or it is empty at index 0'
-        self.cmd('vm create -g {rg} -n {vm} --admin-username {admin} --authentication-type {auth} --image {image} --ssh-key-value \'{ssh_key}\' -l {loc} --secrets \'{secrets}\'', expect_failure=True)
+        message = 'Secret is missing vaultCertificates array or it is empty at index 0'
+        with self.assertRaisesRegexp(CLIError, message):
+            self.cmd('vm create -g {rg} -n {vm} --admin-username {admin} --authentication-type {auth} --image {image} --ssh-key-value \'{ssh_key}\' -l {loc} --secrets \'{secrets}\'')
 
         vault_out = self.cmd('keyvault create -g {rg} -n {vault} -l {loc} --enabled-for-deployment true --enabled-for-template-deployment true').get_output_in_json()
 
@@ -2054,10 +2045,10 @@ class SecretsScenarioTest(ScenarioTest):  # pylint: disable=too-many-instance-at
             'vault': self.create_random_name('vmkeyvault', 20)
         })
 
-        # TODO: Re-enable when issue #5155 is resolved.
-        # message = 'Secret is missing certificateStore within vaultCertificates array at secret index 0 and ' \
-        #           'vaultCertificate index 0'
-        self.cmd('vm create -g {rg} -n {vm} --admin-username {admin} --admin-password VerySecret!12 --image {image} -l {loc} --secrets \'{secrets}\'', expect_failure=True)
+        message = 'Secret is missing certificateStore within vaultCertificates array at secret index 0 and ' \
+                  'vaultCertificate index 0'
+        with self.assertRaisesRegexp(CLIError, message):
+            self.cmd('vm create -g {rg} -n {vm} --admin-username {admin} --admin-password VerySecret!12 --image {image} -l {loc} --secrets \'{secrets}\'')
 
         vault_out = self.cmd(
             'keyvault create -g {rg} -n {vault} -l {loc} --enabled-for-deployment true --enabled-for-template-deployment true').get_output_in_json()
@@ -2089,7 +2080,7 @@ class VMSSCreateLinuxSecretsScenarioTest(ScenarioTest):
             'loc': 'westus',
             'vmss': 'vmss1-name',
             'secrets': json.dumps([{'sourceVault': {'id': 'id'}, 'vaultCertificates': []}]),
-            'vault': 'vmcreatelinuxsecret3334',
+            'vault': self.create_random_name('vmlinuxkv', 20),
             'secret': 'mysecret',
             'ssh_key': TEST_SSH_KEY_PUB
         })
@@ -2627,7 +2618,7 @@ class VMZoneScenarioTest(ScenarioTest):
         try:
             self.cmd('vm create -g {rg} -n vm1 --admin-username clitester --admin-password PasswordPassword1! --image debian --zone 1')
         except Exception as ex:
-            self.assertTrue('availablity zone is not yet supported' in str(ex))
+            self.assertTrue('availability zone is not yet supported' in str(ex))
 
     @ResourceGroupPreparer(name_prefix='cli_test_vmss_zones', location='eastus2')
     @AllowLargeResponse(size_kb=8192)
@@ -2751,7 +2742,7 @@ class VMRunCommandScenarioTest(ScenarioTest):
 
         self.cmd('vm run-command list -l {loc}')
         self.cmd('vm run-command show --command-id RunShellScript -l {loc}')
-        public_ip = self.cmd('vm create -g {rg} -n {vm} --image ubuntults --admin-username clitest1 --admin-password Test12345678!!').get_output_in_json()['publicIpAddress']
+        public_ip = self.cmd('vm create -g {rg} -n {vm} --image ubuntults --admin-username clitest1 --admin-password Test12345678!! --generate-ssh-keys').get_output_in_json()['publicIpAddress']
 
         self.cmd('vm open-port -g {rg} -n {vm} --port 80')
         self.cmd('vm run-command invoke -g {rg} -n{vm} --command-id RunShellScript --script "sudo apt-get update && sudo apt-get install -y nginx"')
@@ -2763,8 +2754,55 @@ class VMRunCommandScenarioTest(ScenarioTest):
     @ResourceGroupPreparer(name_prefix='cli_test_vm_run_command_w_params')
     def test_vm_run_command_with_parameters(self, resource_group):
         self.kwargs.update({'vm': 'test-run-command-vm2'})
-        self.cmd('vm create -g {rg} -n {vm} --image debian --admin-username clitest1 --admin-password Test12345678!!')
+        self.cmd('vm create -g {rg} -n {vm} --image debian --admin-username clitest1 --admin-password Test12345678!! --generate-ssh-keys')
         self.cmd('vm run-command invoke -g {rg} -n{vm} --command-id RunShellScript  --scripts "echo $0 $1" --parameters hello world')
+
+
+class VMSSRunCommandScenarioTest(ScenarioTest):
+    @ResourceGroupPreparer(name_prefix='cli_test_vmss_run_command')
+    def test_vmss_run_command_e2e(self, resource_group, resource_group_location):
+
+        self.kwargs.update({
+            'vmss': 'test-run-command-vmss',
+            'loc': resource_group_location
+        })
+
+        # Test basic run-command commands
+        self.cmd('vmss run-command list -l {loc}')
+        self.cmd('vmss run-command show --command-id RunShellScript -l {loc}')
+
+        self.cmd('vmss create -g {rg} -n {vmss} --image ubuntults --admin-username clitest1 --instance-count 1 --generate-ssh-keys --disable-overprovision').get_output_in_json()
+
+        # get load balancer and allow trafic to scale set.
+        lb = self.cmd('network lb list -g {rg}').get_output_in_json()[0]
+        self.kwargs.update({
+            'lb_name': lb['name'],
+            'lb_backend': lb['backendAddressPools'][0]['name'],
+            'lb_frontend': lb['frontendIpConfigurations'][0]['name'],
+            'lb_ip_id': lb['frontendIpConfigurations'][0]['publicIpAddress']['id']
+        })
+        self.cmd('az network lb rule create -g {rg} --name allowTrafficRule --lb-name {lb_name} --backend-pool-name {lb_backend} --frontend-ip-name {lb_frontend} --backend-port 80 --frontend-port 80 --protocol tcp')
+        public_ip = self.cmd('az network public-ip show --ids {lb_ip_id}').get_output_in_json()['ipAddress']
+
+        self.kwargs['instance_ids'] = " ".join(self.cmd('az vmss list-instances -n {vmss} -g {rg} --query "[].id"').get_output_in_json())
+
+        self.cmd('vmss run-command invoke --ids {instance_ids} --command-id RunShellScript --script "sudo apt-get update && sudo apt-get install -y nginx"')
+
+        time.sleep(15)  # 15 seconds should be enough for nginx started(Skipped under playback mode)
+
+        import requests
+        r = requests.get('http://' + public_ip)
+        self.assertTrue('Welcome to nginx' in str(r.content))
+
+    @ResourceGroupPreparer(name_prefix='cli_test_vmss_run_command_w_params')
+    def test_vmss_run_command_with_parameters(self, resource_group):
+        self.kwargs.update({'vmss': 'test-run-command-vmss2'})
+        self.cmd('vmss create -g {rg} -n {vmss} --image debian --admin-username clitest1 --generate-ssh-keys')
+        self.kwargs['instance_ids'] = self.cmd('vmss list-instances --resource-group {rg} --name {vmss} --query "[].instanceId"').get_output_in_json()
+
+        for id in self.kwargs['instance_ids']:
+            self.kwargs['id'] = id
+            self.cmd('vmss run-command invoke -g {rg} -n {vmss} --instance-id {id} --command-id RunShellScript  --scripts "echo $0 $1" --parameters hello world')
 
 
 @api_version_constraint(ResourceType.MGMT_COMPUTE, min_api='2017-03-30')
@@ -3059,7 +3097,9 @@ class VMGalleryImage(ScenarioTest):
                  checks=[
                      self.check('publishingProfile.replicaCount', 2),
                      self.check('length(publishingProfile.targetRegions)', 2),
-                     self.check('publishingProfile.targetRegions', [dict(name="West US 2", regionalReplicaCount=1), dict(name="East US 2", regionalReplicaCount=2)])
+                     self.check('publishingProfile.targetRegions',
+                                [dict(name="West US 2", regionalReplicaCount=1, storageAccountType='Standard_LRS'),
+                                 dict(name="East US 2", regionalReplicaCount=2, storageAccountType='Standard_LRS')])
                  ])
 
         self.cmd('vm create -g {rg} -n {vm2} --image {image_id} --admin-username clitest1 --generate-ssh-keys', checks=self.check('powerState', 'VM running'))

@@ -151,11 +151,11 @@ def _get_sku_object(cmd, sku):
     return sku
 
 
-def _grant_access(cmd, resource_group_name, name, duration_in_seconds, is_disk):
+def _grant_access(cmd, resource_group_name, name, duration_in_seconds, is_disk, access_level):
     AccessLevel = cmd.get_models('AccessLevel')
     client = _compute_client_factory(cmd.cli_ctx)
     op = client.disks if is_disk else client.snapshots
-    return op.grant_access(resource_group_name, name, AccessLevel.read, duration_in_seconds)
+    return op.grant_access(resource_group_name, name, access_level or AccessLevel.read, duration_in_seconds)
 
 
 def _is_linux_os(vm):
@@ -243,13 +243,13 @@ class ExtensionUpdateLongRunningOperation(LongRunningOperation):  # pylint: disa
 
 
 # region Disks (Managed)
-def create_managed_disk(cmd, resource_group_name, disk_name, location=None,
+def create_managed_disk(cmd, resource_group_name, disk_name, location=None,  # pylint: disable=too-many-locals
                         size_gb=None, sku='Premium_LRS', os_type=None,
-                        source=None,  # pylint: disable=unused-argument
+                        source=None, for_upload=None,  # pylint: disable=unused-argument
                         # below are generated internally from 'source'
                         source_blob_uri=None, source_disk=None, source_snapshot=None,
                         source_storage_account_id=None, no_wait=False, tags=None, zone=None,
-                        disk_iops_read_write=None, disk_mbps_read_write=None):
+                        disk_iops_read_write=None, disk_mbps_read_write=None, hyper_v_generation=None):
     Disk, CreationData, DiskCreateOption = cmd.get_models('Disk', 'CreationData', 'DiskCreateOption')
 
     location = location or _get_resource_group_location(cmd.cli_ctx, resource_group_name)
@@ -257,6 +257,8 @@ def create_managed_disk(cmd, resource_group_name, disk_name, location=None,
         option = DiskCreateOption.import_enum
     elif source_disk or source_snapshot:
         option = DiskCreateOption.copy
+    elif for_upload:
+        option = DiskCreateOption.upload
     else:
         option = DiskCreateOption.empty
 
@@ -265,10 +267,14 @@ def create_managed_disk(cmd, resource_group_name, disk_name, location=None,
                                  source_resource_id=source_disk or source_snapshot,
                                  storage_account_id=source_storage_account_id)
 
-    if size_gb is None and option == DiskCreateOption.empty:
+    if size_gb is None and (option == DiskCreateOption.empty or for_upload):
         raise CLIError('usage error: --size-gb required to create an empty disk')
     disk = Disk(location=location, creation_data=creation_data, tags=(tags or {}),
                 sku=_get_sku_object(cmd, sku), disk_size_gb=size_gb, os_type=os_type)
+
+    if hyper_v_generation:
+        disk.hyper_vgeneration = hyper_v_generation
+
     if zone:
         disk.zones = zone
     if disk_iops_read_write is not None:
@@ -280,8 +286,9 @@ def create_managed_disk(cmd, resource_group_name, disk_name, location=None,
     return sdk_no_wait(no_wait, client.disks.create_or_update, resource_group_name, disk_name, disk)
 
 
-def grant_disk_access(cmd, resource_group_name, disk_name, duration_in_seconds):
-    return _grant_access(cmd, resource_group_name, disk_name, duration_in_seconds, True)
+def grant_disk_access(cmd, resource_group_name, disk_name, duration_in_seconds, access_level=None):
+    return _grant_access(cmd, resource_group_name, disk_name, duration_in_seconds, is_disk=True,
+                         access_level=access_level)
 
 
 def list_managed_disks(cmd, resource_group_name=None):
@@ -353,6 +360,12 @@ def create_image(cmd, resource_group_name, name, source, os_type=None, data_disk
     return client.images.create_or_update(resource_group_name, name, image)
 
 
+def update_image(instance, tags=None):
+    if tags is not None:
+        instance.tags = tags
+    return instance
+
+
 def list_images(cmd, resource_group_name=None):
     client = _compute_client_factory(cmd.cli_ctx)
     if resource_group_name:
@@ -363,10 +376,10 @@ def list_images(cmd, resource_group_name=None):
 
 # region Snapshots
 def create_snapshot(cmd, resource_group_name, snapshot_name, location=None, size_gb=None, sku='Standard_LRS',
-                    source=None,  # pylint: disable=unused-argument
+                    source=None, for_upload=None,  # pylint: disable=unused-argument
                     # below are generated internally from 'source'
                     source_blob_uri=None, source_disk=None, source_snapshot=None, source_storage_account_id=None,
-                    tags=None, no_wait=False):
+                    hyper_v_generation=None, tags=None, no_wait=False):
     Snapshot, CreationData, DiskCreateOption = cmd.get_models('Snapshot', 'CreationData', 'DiskCreateOption')
 
     location = location or _get_resource_group_location(cmd.cli_ctx, resource_group_name)
@@ -374,6 +387,8 @@ def create_snapshot(cmd, resource_group_name, snapshot_name, location=None, size
         option = DiskCreateOption.import_enum
     elif source_disk or source_snapshot:
         option = DiskCreateOption.copy
+    elif for_upload:
+        option = DiskCreateOption.upload
     else:
         option = DiskCreateOption.empty
 
@@ -384,15 +399,18 @@ def create_snapshot(cmd, resource_group_name, snapshot_name, location=None, size
 
     if size_gb is None and option == DiskCreateOption.empty:
         raise CLIError('Please supply size for the snapshots')
-
     snapshot = Snapshot(location=location, creation_data=creation_data, tags=(tags or {}),
                         sku=_get_sku_object(cmd, sku), disk_size_gb=size_gb)
+    if hyper_v_generation:
+        snapshot.hyper_vgeneration = hyper_v_generation
+
     client = _compute_client_factory(cmd.cli_ctx)
     return sdk_no_wait(no_wait, client.snapshots.create_or_update, resource_group_name, snapshot_name, snapshot)
 
 
-def grant_snapshot_access(cmd, resource_group_name, snapshot_name, duration_in_seconds):
-    return _grant_access(cmd, resource_group_name, snapshot_name, duration_in_seconds, False)
+def grant_snapshot_access(cmd, resource_group_name, snapshot_name, duration_in_seconds, access_level=None):
+    return _grant_access(cmd, resource_group_name, snapshot_name, duration_in_seconds, is_disk=False,
+                         access_level=access_level)
 
 
 def list_snapshots(cmd, resource_group_name=None):
@@ -462,14 +480,6 @@ def assign_vm_identity(cmd, resource_group_name, vm_name, assign_identity=None, 
     vm = client.virtual_machines.get(resource_group_name, vm_name)
     return _construct_identity_info(identity_scope, identity_role, vm.identity.principal_id,
                                     vm.identity.user_assigned_identities)
-
-
-def list_user_assigned_identities(cmd, resource_group_name=None):
-    from azure.cli.command_modules.vm._client_factory import msi_client_factory
-    client = msi_client_factory(cmd.cli_ctx)
-    if resource_group_name:
-        return client.user_assigned_identities.list_by_resource_group(resource_group_name)
-    return client.user_assigned_identities.list_by_subscription()
 # endregion
 
 
@@ -820,7 +830,7 @@ def open_vm_port(cmd, resource_group_name, vm_name, port, priority=900, network_
     if len(nic_ids) > 1:
         raise CLIError('Multiple NICs is not supported for this command. Create rules on the NSG '
                        'directly.')
-    elif not nic_ids:
+    if not nic_ids:
         raise CLIError("No NIC associated with VM '{}'".format(vm_name))
 
     # get existing NSG or create a new one
@@ -1472,7 +1482,7 @@ def _update_vm_nics(cmd, vm, nics, primary_nic):
 
 
 # region VirtualMachines RunCommand
-def run_command_invoke(cmd, resource_group_name, vm_name, command_id, scripts=None, parameters=None):
+def run_command_invoke(cmd, resource_group_name, vm_vmss_name, command_id, scripts=None, parameters=None, instance_id=None):  # pylint: disable=line-too-long
     RunCommandInput, RunCommandInputParameter = cmd.get_models('RunCommandInput', 'RunCommandInputParameter')
 
     parameters = parameters or []
@@ -1491,9 +1501,21 @@ def run_command_invoke(cmd, resource_group_name, vm_name, command_id, scripts=No
         run_command_input_parameters.append(RunCommandInputParameter(name=n, value=v))
 
     client = _compute_client_factory(cmd.cli_ctx)
-    return client.virtual_machines.run_command(resource_group_name, vm_name,
+
+    # if instance_id, this is a vmss instance
+    if instance_id:
+        return client.virtual_machine_scale_set_vms.run_command(resource_group_name, vm_vmss_name, instance_id,
+                                                                RunCommandInput(command_id=command_id, script=scripts,
+                                                                                parameters=run_command_input_parameters))  # pylint: disable=line-too-long
+    # otherwise this is a regular vm instance
+    return client.virtual_machines.run_command(resource_group_name, vm_vmss_name,
                                                RunCommandInput(command_id=command_id, script=scripts,
                                                                parameters=run_command_input_parameters))
+
+
+def vm_run_command_invoke(cmd, resource_group_name, vm_name, command_id, scripts=None, parameters=None):
+    return run_command_invoke(cmd, resource_group_name, vm_name, command_id, scripts, parameters)
+
 # endregion
 
 
@@ -2247,14 +2269,14 @@ def start_vmss(cmd, resource_group_name, vm_scale_set_name, instance_ids=None, n
                        resource_group_name, vm_scale_set_name, instance_ids=instance_ids)
 
 
-def stop_vmss(cmd, resource_group_name, vm_scale_set_name, instance_ids=None, no_wait=False):
+def stop_vmss(cmd, resource_group_name, vm_scale_set_name, instance_ids=None, no_wait=False, skip_shutdown=False):
     client = _compute_client_factory(cmd.cli_ctx)
     if instance_ids and len(instance_ids) == 1:
-        return sdk_no_wait(no_wait, client.virtual_machine_scale_set_vms.power_off,
-                           resource_group_name, vm_scale_set_name, instance_ids[0])
+        return sdk_no_wait(no_wait, client.virtual_machine_scale_set_vms.power_off, resource_group_name,
+                           vm_scale_set_name, instance_id=instance_ids[0], skip_shutdown=skip_shutdown)
 
     return sdk_no_wait(no_wait, client.virtual_machine_scale_sets.power_off, resource_group_name, vm_scale_set_name,
-                       instance_ids=instance_ids)
+                       instance_ids=instance_ids, skip_shutdown=skip_shutdown)
 
 
 def update_vmss_instances(cmd, resource_group_name, vm_scale_set_name, instance_ids, no_wait=False):
@@ -2447,6 +2469,12 @@ def set_vmss_extension(cmd, resource_group_name, vmss_name, extension_name, publ
 # endregion
 
 
+# region VirtualMachineScaleSets RunCommand
+def vmss_run_command_invoke(cmd, resource_group_name, vmss_name, command_id, instance_id, scripts=None, parameters=None):  # pylint: disable=line-too-long
+    return run_command_invoke(cmd, resource_group_name, vmss_name, command_id, scripts, parameters, instance_id)
+# endregion
+
+
 # region VirtualMachineScaleSets Identity
 def remove_vmss_identity(cmd, resource_group_name, vmss_name, identities=None):
     client = _compute_client_factory(cmd.cli_ctx)
@@ -2523,8 +2551,8 @@ def create_gallery_image(cmd, resource_group_name, gallery_name, gallery_image_n
 
 
 def create_image_version(cmd, resource_group_name, gallery_name, gallery_image_name, managed_image,
-                         gallery_image_version, location=None, target_regions=None, end_of_life_date=None,
-                         exclude_from_latest=None, replica_count=None, tags=None):
+                         gallery_image_version, location=None, target_regions=None, storage_account_type=None,
+                         end_of_life_date=None, exclude_from_latest=None, replica_count=None, tags=None):
     from msrestazure.tools import resource_id, is_valid_resource_id
     ImageVersionPublishingProfile, GalleryArtifactSource, ManagedArtifact, ImageVersion, TargetRegion = cmd.get_models(
         'GalleryImageVersionPublishingProfile', 'GalleryArtifactSource', 'ManagedArtifact', 'GalleryImageVersion',
@@ -2538,7 +2566,8 @@ def create_image_version(cmd, resource_group_name, gallery_name, gallery_image_n
     source = GalleryArtifactSource(managed_image=ManagedArtifact(id=managed_image))
     profile = ImageVersionPublishingProfile(exclude_from_latest=exclude_from_latest, end_of_life_date=end_of_life_date,
                                             target_regions=target_regions or [TargetRegion(name=location)],
-                                            source=source, replica_count=replica_count)
+                                            source=source, replica_count=replica_count,
+                                            storage_account_type=storage_account_type)
     image_version = ImageVersion(publishing_profile=profile, location=location, tags=(tags or {}))
 
     return client.gallery_image_versions.create_or_update(resource_group_name=resource_group_name,

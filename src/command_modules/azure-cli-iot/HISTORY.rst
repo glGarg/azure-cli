@@ -2,6 +2,14 @@
 
 Release History
 ===============
+0.3.7
++++++
+* Minor fixes
+
+0.3.6
++++++
+* Minor fixes
+
 0.3.5
 +++++
 * Increment IotHub mgmt SDK requirement.

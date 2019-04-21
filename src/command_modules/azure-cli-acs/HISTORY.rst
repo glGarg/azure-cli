@@ -3,13 +3,47 @@
 Release History
 ===============
 
-2.3.14
+2.3.22
+++++++
+* "az aks get-credentials" will prompt to overwrite duplicated values
+* Remove "(PREVIEW)" from Dev Spaces commands, "az aks use-dev-spaces" and "az aks remove-dev-spaces".
+
+2.3.21
+++++++
+* Minor fixes.
+
+2.3.20
+++++++
+* Minor fixes.
+
+2.3.19
+++++++
+* ignore listen-address argument to "az aks browse" if kubectl doesn't support it
+
+2.3.18
+++++++
+* add listen-address option to "az aks port-forward"
+
+2.3.17
+++++++
+* az aks enable-addons /disable-addons: support case insensitive name
+* support Azure Active Directory updating operation using "az aks update-credentials --reset-aad"
+* clarify that "--output" is ignored for "az aks get-credentials"
+
+2.3.16
+++++++
+* Minor fixes
+
+2.3.15
 ++++++
 * Add Virtual Nodes Preview
 * Add Managed OpenShift commands
+* Support Service Principal updating operation using "az aks update-credentials --reset-service-principal"
+
+2.3.14
+++++++
 * Minor fixes
 * Add support for new ACI regions
-* Support Service Principal updating operation using "az aks update-credentials --reset-service-principal"
 
 2.3.13
 ++++++

@@ -2,7 +2,57 @@
 
 Release History
 ===============
+* webapp: az webapp ssh now support ASE and a timeout parameter
+* functionapp: add feature for establishing CI CD to an Azure DevOps pipeline from a Github repository
+* functionapp: in `az functionapp devops-build create`, added `--github-pat` flag to accept Github personal access token
+* functionapp: in `az functionapp devops-build create`, added `--github-repository` flag to accept Github repository that contains a functionapp source code
+* webapp: az webapp up --logs was failing with a error and updating default .NETCORE version to 2.1
+* functionapp: remove unnecessary app settings while creating a function app with consumption plan
+* webapp: az webapp up default asp string now appends number at the end to create a new ASP based on SKU options
+* webapp: az webapp up support -b as an option to launch the app in the browser
+* webapp: az webapp deployment source config zip handles 'AZURE_CLI_DISABLE_CONNECTION_VERIFICATION' environment variable
+
+0.2.17
+++++++
+* webapp: Adding --logs support to az webapp up and other improvements to the up command
+* functionapp: fix `az functionapp devops-build create` command azure-pipelines.yml generation issues
+* functionapp: improve `az functionapp devops-build create` error handlings and error indications
+* functionapp: remove `--local_git` flag in devops-build command, local git detection and handling are compulsory for creating Azure DevOps pipelines
+* functionapp: add support for linux functions plan creation
+* webapp, functionapp: Updating to use the new Python SDK version
+* appservice: adminSiteName property of SKU object is deprecated
+* functionapp: add ability to switch a plan underneath a function app using `az functionapp update --plan`
+* functionapp: add support for azure functions premium plan scale out settings
+
+0.2.16
+++++++
+* webapp: az webapp up was not handling running from empty directory or unknown code scenario correctly
+* webapp, functionapp: az webapp config ssl bind command was failing for slots
+
+0.2.15
+++++++
+* webapp, functionapp: az webapp/functionapp deployment list-publishing-credentials, get the Kudu (scm) url and its credentials
+* Remove erroneous print statement for `az webapp auth update`
+* functionapp: fix setting the correct image for runtime in Linux App Service plans
+* webapp: remove preview tag for az webapp up and other improvements to the command
+
+0.2.14
+++++++
+* functionapp: az functionapp devops-build, new command created
+
+0.2.13
+++++++
+* functionapp: add ability to create and configure functions using ACR containers
+* webapp: add support for updating configurations through json
+* appservice plan: Updating help for appservice-plan-update command
 * functionapp: add support for app insights on functionapp create
+* webapp: bugfixes for webapp ssh
+
+0.2.12
+++++++
+* functionapp: add support for app insights on functionapp create
+* functionapp: add support for app service plan creation (including Elastic Premium)
+* functionapp: fix app setting issues with Elastic Premium plans
 
 0.2.11
 ++++++

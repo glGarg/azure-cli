@@ -14,27 +14,27 @@ def load_command_table(self, _):
     from ._client_factory import cf_hdinsight_script_actions
 
     hdinsight_clusters_sdk = CliCommandType(
-        operations_tmpl='azure.mgmt.hdinsight.operations.clusters_operations#ClustersOperations.{}',
+        operations_tmpl='azure.mgmt.hdinsight.operations#ClustersOperations.{}',
         client_factory=cf_hdinsight_clusters
     )
 
     hdinsight_script_actions_sdk = CliCommandType(
-        operations_tmpl='azure.mgmt.hdinsight.operations.script_actions_operations#ScriptActionsOperations.{}',
+        operations_tmpl='azure.mgmt.hdinsight.operations#ScriptActionsOperations.{}',
         client_factory=cf_hdinsight_script_actions
     )
 
     hdinsight_applications_sdk = CliCommandType(
-        operations_tmpl='azure.mgmt.hdinsight.operations.applications_operations#ApplicationsOperations.{}',
+        operations_tmpl='azure.mgmt.hdinsight.operations#ApplicationsOperations.{}',
         client_factory=cf_hdinsight_applications
     )
 
     hdinsight_extensions_sdk = CliCommandType(
-        operations_tmpl='azure.mgmt.hdinsight.operations.extensions_operations#ExtensionsOperations.{}',
+        operations_tmpl='azure.mgmt.hdinsight.operations#ExtensionsOperations.{}',
         client_factory=cf_hdinsight_extensions
     )
 
     hdinsight_locations_sdk = CliCommandType(
-        operations_tmpl='azure.mgmt.hdinsight.operations.locations_operations#LocationsOperations.{}',
+        operations_tmpl='azure.mgmt.hdinsight.operations#LocationsOperations.{}',
         client_factory=cf_hdinsight_locations
     )
 
@@ -52,6 +52,8 @@ def load_command_table(self, _):
         g.custom_command('list', 'list_clusters')
         g.wait_command('wait')
         g.command('delete', 'delete', confirmation=True, supports_no_wait=True)
+        g.custom_command('rotate-disk-encryption-key', 'rotate_hdi_cluster_key', supports_no_wait=True)
+        g.command('update', 'update', supports_no_wait=True)
 
     # usage operations
     with self.command_group('hdinsight', hdinsight_locations_sdk, client_factory=cf_hdinsight_locations) as g:

@@ -2,6 +2,35 @@
 
 Release History
 ===============
+2.0.62
+++++++
+* Minor fixes.
+
+2.0.61
+++++++
+* Minor fixes.
+
+2.0.60
+++++++
+* Minor fixes.
+
+2.0.59
+++++++
+* Minor fixes.
+
+2.0.58
+++++++
+* Pinning versions of command modules for pip install.
+
+2.0.57
+++++++
+* Hot fix for issue 8399_.
+
+.. _8399: https://github.com/Azure/azure-cli/issues/8399
+
+2.0.56
+++++++
+* Minor fixes
 
 2.0.55
 ++++++
