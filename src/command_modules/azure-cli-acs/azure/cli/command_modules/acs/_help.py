@@ -4,7 +4,7 @@
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
 
-from knack.help_files import helps
+from knack.help_files import helps  # pylint: disable=unused-import
 # pylint: disable=line-too-long, too-many-lines
 
 helps['acs'] = """
@@ -457,7 +457,7 @@ examples:
 
 helps['aks remove-dev-spaces'] = """
 type: command
-short-summary: Remove Azure Dev Spaces from a managed Kubernetes cluster.
+short-summary: (PREVIEW) Remove Azure Dev Spaces from a managed Kubernetes cluster.
 examples:
   - name: Remove Azure Dev Spaces from a managed Kubernetes cluster.
     text: |-
@@ -596,7 +596,7 @@ examples:
 
 helps['aks use-dev-spaces'] = """
 type: command
-short-summary: Use Azure Dev Spaces with a managed Kubernetes cluster.
+short-summary: (PREVIEW) Use Azure Dev Spaces with a managed Kubernetes cluster.
 parameters:
   - name: --update
     type: bool

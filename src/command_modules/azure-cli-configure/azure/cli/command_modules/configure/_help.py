@@ -4,39 +4,19 @@
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
 
-from knack.help_files import helps
-
+from knack.help_files import helps  # pylint: disable=unused-import
+# pylint: disable=line-too-long, too-many-lines
 
 helps['configure'] = """
-    type: command
-    short-summary: Manage Azure CLI configuration. This command is interactive.
-    parameters:
-        - name: --defaults -d
-          short-summary: >
-            Space-separated 'name=value' pairs for common argument defaults.
-    examples:
-        - name: Set default resource group, webapp and VM names.
-          text: az configure --defaults group=myRG web=myweb vm=myvm
-        - name: Clear default webapp and VM names.
-          text: az configure --defaults vm='' web=''
-"""
-
-helps['cache'] = """
-    type: group
-    short-summary: Commands to manage the CLI's on-disk object cache.
-"""
-
-helps['cache list'] = """
-    type: command
-    short-summary: List the contents of the object cache.
-"""
-
-helps['cache show'] = """
-    type: command
-    short-summary: Show the contents of a specific object in the cache.
-"""
-
-helps['cache delete'] = """
-    type: command
-    short-summary: Delete an object from the cache.
+type: command
+short-summary: Manage Azure CLI configuration. This command is interactive.
+parameters:
+  - name: --defaults -d
+    short-summary: >
+        Space-separated 'name=value' pairs for common argument defaults.
+examples:
+  - name: Set default resource group, webapp and VM names.
+    text: az configure --defaults group=myRG web=myweb vm=myvm
+  - name: Clear default webapp and VM names.
+    text: az configure --defaults vm='' web=''
 """
