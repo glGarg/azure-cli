@@ -4,7 +4,7 @@
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
 
-from knack.help_files import helps
+from knack.help_files import helps  # pylint: disable=unused-import
 # pylint: disable=line-too-long, too-many-lines
 
 helps['acs'] = """
@@ -662,11 +662,16 @@ parameters:
   - name: --subnet-prefix
     type: string
     short-summary: The CIDR used on the Subnet into which to deploy the cluster.
+  - name: --customer-admin-group-id
+    type: string
+    short-summary: The Object ID of an Azure Active Directory Group that memberships will get synced into the OpenShift group "osa-customer-admins". If not specified, no cluster admin access will be granted.
 
 
 examples:
   - name: Create an OpenShift cluster and auto create an AAD Client
     text: az openshift create -g MyResourceGroup -n MyManagedCluster --fqdn {FQDN}
+  - name: Create an OpenShift cluster and auto create an AAD Client and setup cluster admin group
+    text: az openshift create -g MyResourceGroup -n MyManagedCluster --fqdn {FQDN} --customer-admin-group-id {GROUP_ID}
   - name: Create an OpenShift cluster with 5 compute nodes and a custom AAD Client.
     text: az openshift create -g MyResourceGroup -n MyManagedCluster --fqdn {FQDN} --aad-client-app-id {APP_ID} --aad-client-app-secret {APP_SECRET} --aad-tenant-id {TENANT_ID} --compute-count 5
   - name: Create an Openshift cluster using a custom vnet
