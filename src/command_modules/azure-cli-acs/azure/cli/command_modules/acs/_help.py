@@ -4,7 +4,7 @@
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
 
-from knack.help_files import helps
+from knack.help_files import helps  # pylint: disable=unused-import
 # pylint: disable=line-too-long, too-many-lines
 
 helps['acs'] = """
@@ -257,7 +257,7 @@ parameters:
     long-summary: Specify "azure" for advanced networking configurations. Defaults to "kubenet".
   - name: --network-policy
     type: string
-    short-summary: (PREVIEW) The Kubernetes network policy to use.
+    short-summary: The Kubernetes network policy to use.
     long-summary: |
         Using together with "azure" network plugin.
         Specify "azure" for Azure network policy manager and "calico" for calico network policy controller.
@@ -380,7 +380,7 @@ short-summary: Download and install kubectl, the Kubernetes command-line tool.
 
 helps['aks install-connector'] = """
 type: command
-short-summary: (PREVIEW) Install the ACI Connector on a managed Kubernetes cluster.
+short-summary: Install the ACI Connector on a managed Kubernetes cluster.
 parameters:
   - name: --chart-url
     type: string
@@ -437,7 +437,7 @@ short-summary: List managed Kubernetes clusters.
 
 helps['aks remove-connector'] = """
 type: command
-short-summary: (PREVIEW) Remove the ACI Connector from a managed Kubernetes cluster.
+short-summary: Remove the ACI Connector from a managed Kubernetes cluster.
 parameters:
   - name: --connector-name
     type: string
@@ -520,7 +520,7 @@ parameters:
 
 examples:
   - name: Update an existing Kubernetes cluster with new service principal.
-    text: az aks update-credentials -g MyResourceGroup -n MyManagedCluster --reset-service-principal --service-principal MyNewServicePrincipalID --service-principal MyNewServicePrincipalID --client-secret MyNewServicePrincipalSecret
+    text: az aks update-credentials -g MyResourceGroup -n MyManagedCluster --reset-service-principal --service-principal MyNewServicePrincipalID --client-secret MyNewServicePrincipalSecret
   - name: Update an existing Azure Active Directory Kubernetes cluster with new server app secret key.
     text: az aks update-credentials -g MyResourceGroup -n MyManagedCluster --reset-aad --aad-server-app-id MyExistingAADServerAppID --aad-server-app-secret MyNewAADServerAppSecret --aad-client-app-id MyExistingAADClientAppID --aad-tenant-id MyAADTenantID
 """
@@ -543,7 +543,7 @@ examples:
 
 helps['aks upgrade-connector'] = """
 type: command
-short-summary: (PREVIEW) Upgrade the ACI Connector on a managed Kubernetes cluster.
+short-summary: Upgrade the ACI Connector on a managed Kubernetes cluster.
 parameters:
   - name: --chart-url
     type: string
@@ -628,12 +628,12 @@ examples:
 
 helps['openshift'] = """
 type: group
-short-summary: (PREVIEW) Manage Azure OpenShift Services.
+short-summary: Manage Azure Red Hat OpenShift Services.
 """
 
 helps['openshift create'] = """
 type: command
-short-summary: (PREVIEW) Create a new managed OpenShift cluster.
+short-summary: Create a new managed OpenShift cluster.
 parameters:
   - name: --compute-vm-size -s
     type: string
@@ -641,9 +641,6 @@ parameters:
   - name: --compute-count -c
     type: int
     short-summary: Number of nodes in the OpenShift node pool.
-  - name: --fqdn
-    type: string
-    short-summary: FQDN for OpenShift API server loadbalancer internal hostname. For example myopenshiftcluster.eastus.cloudapp.azure.com
   - name: --aad-client-app-id
     type: string
     short-summary: The ID of an Azure Active Directory client application. If not specified, a new Azure Active Directory client is created.
@@ -662,20 +659,25 @@ parameters:
   - name: --subnet-prefix
     type: string
     short-summary: The CIDR used on the Subnet into which to deploy the cluster.
+  - name: --customer-admin-group-id
+    type: string
+    short-summary: The Object ID of an Azure Active Directory Group that memberships will get synced into the OpenShift group "osa-customer-admins". If not specified, no cluster admin access will be granted.
 
 
 examples:
   - name: Create an OpenShift cluster and auto create an AAD Client
-    text: az openshift create -g MyResourceGroup -n MyManagedCluster --fqdn {FQDN}
+    text: az openshift create -g MyResourceGroup -n MyManagedCluster
+  - name: Create an OpenShift cluster and auto create an AAD Client and setup cluster admin group
+    text: az openshift create -g MyResourceGroup -n MyManagedCluster --customer-admin-group-id {GROUP_ID}
   - name: Create an OpenShift cluster with 5 compute nodes and a custom AAD Client.
-    text: az openshift create -g MyResourceGroup -n MyManagedCluster --fqdn {FQDN} --aad-client-app-id {APP_ID} --aad-client-app-secret {APP_SECRET} --aad-tenant-id {TENANT_ID} --compute-count 5
+    text: az openshift create -g MyResourceGroup -n MyManagedCluster --aad-client-app-id {APP_ID} --aad-client-app-secret {APP_SECRET} --aad-tenant-id {TENANT_ID} --compute-count 5
   - name: Create an Openshift cluster using a custom vnet
-    text: az openshift create -g MyResourceGroup -n MyManagedCluster --fqdn {FQDN} --vnet-peer "/subscriptions/0000000-0000-0000-0000-000000000000/resourceGroups/openshift-vnet/providers/Microsoft.Network/virtualNetworks/test"
+    text: az openshift create -g MyResourceGroup -n MyManagedCluster --vnet-peer "/subscriptions/0000000-0000-0000-0000-000000000000/resourceGroups/openshift-vnet/providers/Microsoft.Network/virtualNetworks/test"
 """
 
 helps['openshift delete'] = """
 type: command
-short-summary: (PREVIEW) Delete a managed OpenShift cluster.
+short-summary: Delete a managed OpenShift cluster.
 examples:
   - name: Delete a managed OpenShift cluster. (autogenerated)
     text: az openshift delete --name MyManagedOpenShiftCluster --resource-group MyResourceGroup
@@ -684,12 +686,12 @@ examples:
 
 helps['openshift list'] = """
 type: command
-short-summary: (PREVIEW) List managed OpenShift clusters.
+short-summary: List managed OpenShift clusters.
 """
 
 helps['openshift scale'] = """
 type: command
-short-summary: (PREVIEW) Scale the compute pool in a managed OpenShift cluster.
+short-summary: Scale the compute pool in a managed OpenShift cluster.
 parameters:
   - name: --compute-count -c
     type: int
@@ -702,7 +704,7 @@ examples:
 
 helps['openshift show'] = """
 type: command
-short-summary: (PREVIEW) Show the details for a managed OpenShift cluster.
+short-summary: Show the details for a managed OpenShift cluster.
 examples:
   - name: Show the details for a managed OpenShift cluster. (autogenerated)
     text: az openshift show --name MyManagedOpenShiftCluster --resource-group MyResourceGroup
@@ -711,7 +713,7 @@ examples:
 
 helps['openshift wait'] = """
 type: command
-short-summary: (PREVIEW) Wait for a managed OpenShift cluster to reach a desired state.
+short-summary: Wait for a managed OpenShift cluster to reach a desired state.
 long-summary: If an operation on a cluster was interrupted or was started with `--no-wait`, use this command to wait for it to complete.
 examples:
   - name: Wait for a cluster to be upgraded, polling every minute for up to thirty minutes.
